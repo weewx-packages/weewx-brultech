@@ -3,20 +3,21 @@
 #
 #    See the file LICENSE.txt for your full rights.
 #
+#    2026-10-23: Python 2 support and distutils removed by the weewx-packages
+#    organization. See the file "changelog".
+#
 """Installer for weewx-brultech"""
 
-from distutils.version import StrictVersion
 from io import StringIO
-import fnmatch
-import os
 
 import configobj
 
 import weewx
 from weecfg.extension import ExtensionInstaller
+from weeutil.weeutil import version_compare
 
-REQUIRED_WEEWX = "4.2.0"
-if StrictVersion(weewx.__version__) < StrictVersion(REQUIRED_WEEWX):
+REQUIRED_WEEWX = "5.0.0"
+if version_compare(weewx.__version__, REQUIRED_WEEWX) < 0:
     raise weewx.UnsupportedFeature("weewx %s or greater is required, found %s"
                                    % (REQUIRED_WEEWX, weewx.__version__))
 
@@ -25,13 +26,14 @@ def loader():
     return WeepwrInstaller()
 
 
-BRULTECH_DEFAULTS = u"""
+BRULTECH_DEFAULTS = """
 [Brultech]
 
     # See README.md for instructions on how to configure the Brultech devices!!
 
-    # Power is computed as the difference between energy records. How old a 
-    # record can be and still be used for this calculation:
+    # Power and delta energy are computed as the difference between energy records. How old
+    # (in seconds) the previous record can be and still be used for this calculation. Must be
+    # larger than the archive interval:
     stale = 1800
 
     # How often to poll the device for data
@@ -106,7 +108,7 @@ defaults_dict = configobj.ConfigObj(StringIO(BRULTECH_DEFAULTS), encoding='utf-8
 class WeepwrInstaller(ExtensionInstaller):
     def __init__(self):
         super(WeepwrInstaller, self).__init__(
-            version="2.2.0",
+            version="2.3.0",
             name='weewx-brultech',
             description='Extensions to the weewx weather system for Brultech energy monitors.',
             author="Thomas Keffer",

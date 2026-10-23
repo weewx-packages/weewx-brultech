@@ -1,317 +1,116 @@
-weewx-brultech
-======
+# weewx-brultech
 
-Extension to the WeeWX weather system for collecting data and generating reports for the
-Brultech GEM energy monitors.
+A WeeWX driver, database schema and report skins for the Brultech GEM energy monitors. The driver polls the monitor over the network, stores energy, current, pulse counts and temperatures in a database of its own, and the skins show current, daily, weekly, monthly and yearly energy use.
 
-## Overview
+It is written for the GEM and does not configure the monitor beyond the setup described below.
 
-This is a extension for the WeeWX weather system for the Brultech GEM energy monitor. While an
-energy monitor is very different from a weather station, WeeWX is a very flexible system and has no
-trouble running the driver. The extension includes three parts:
+Continuation of [tkeffer/weewx-brultech](https://github.com/tkeffer/weewx-brultech) by Tom Keffer, which has seen no changes since 2022. The _SeasonsPower_ skin goes back to work by Matthew Wall. See `changelog` for what changed.
 
-- A driver for the GEM energy monitor. The driver is designed to poll your energy monitor at 
-regular intervals, typically every 10-15 seconds, then pass the data on to the rest of the WeeWX
-system.
+## Requirements
 
-- A database schema designed for the monitor. Because the types used by an energy monitor are so
-  radically different from a weather station, this extension includes a specialty schema (called
-  `gem_schema`), specifically designed for the Brultech monitors. It will be used to initialize a
-  separate database from the conventional WeeWX weather database, allowing both to be run
-  simultaneously. By default, it will include space for 32 channels.
+- A Brultech GEM, reachable over the network, set to server mode (see below).
+- No Python packages beyond WeeWX.
 
-- A WeeWX skin, called _SeasonsPower_, designed to display current, week, month, and year energy use. It
-also includes monthly energy summaries. It can easily be customized by following the directions
-in the _[WeeWX Customization Guide](http://www.weewx.com/docs/customizing.htm)_.
+The extension keeps its data in a separate SQLite database (`weepwr.sdb`), not in a weather database. The installer makes it the archive of the station. Weather skins do not work with the data from the monitor.
 
-What follows are directions for installing the extension. It consists of five parts:
-1. [Configuring your Brultech monitor](#Configuring-your-Brultech-device)
-2. [Installing WeeWX](#Install-WeeWX)
-3. Installing the extension, either by using the WeeWX 
-[installer](#Install-the-extension-by-using-the-WeeWX-installer),
-or [manually](#Installing-the-extension-manually).
-4. [Select database options](#Select-database-options)
-5. [Start up WeeWX](#Starting-WeeWX)
+## Installation
 
-## Configuring your Brultech device
-The Brultech energy monitors come with a bewildering array of modes and options. To keep things
-simple, this driver makes two assumptions:
+Install `brultech` from the [WeeWX packages catalog](https://github.com/weewx-packages/catalog/blob/main/packages/brultech.md).
+The catalog page lists the current release, its WeeWX and Python
+requirements, and the install, update and removal commands.
 
-- The device will always be in server mode.
-- The device driver will always poll the device.
+The installer sets `station_type` to `Brultech`, adds the `[Brultech]` section, the `bt_binding` database binding, the service `user.brultech.BrultechService`, and the reports _SeasonsPowerReport_ (enabled) and _StandardPowerReport_ (disabled). Then:
 
-This makes it pretty easy to configure the device:
+1. __Set the monitor to server mode.__
+   Using a browser, connect to the monitor and open the "Application Settings" page.
+   Set it to server mode, using port 8000:
 
-1. Set the GEM to "server mode".
-Using a browser, connect to your GEM (http://192.168.1.104, in my case) 
-and go to the "Application Settings" page. 
-Set it to server mode, using port 8000:
+   ![Application settings](images/server_mode.png)
 
-    ![Application settings](images/server_mode.png)
+   Click Apply. Then open the "Device Management" tab and click "Restart" under _Restart Module_:
 
-    Click Apply.
-    
-2. Then click on the "Device Management" tab, and click the "Restart" button under 
-*Restart Module*.
+   ![Restart Module](images/restart_module.png)
 
-    ![Restart Module](images/restart_module.png)
-    
-The monitor will reboot and be ready to receive commands from the driver.
-That's it for the monitor. 
+2. __Set the address of the monitor.__
+   Run `weectl station reconfigure`. It asks for the host (name or IP address) and the port of the monitor.
+   You can also edit `host` and `port` in section `[Brultech]` of `weewx.conf`.
 
-Next step is to install WeeWX.
+3. __Turn off the weather report.__
+   A new station has the report _SeasonsReport_ enabled. Set `enable = false` for it. It cannot show the data of an energy monitor.
 
-## Install WeeWX
+4. __Restart WeeWX.__
 
-It is strongly recommended that you use the "setup.py" method for installing WeeWX. All of the
-instructions that follow assume this.
+Databases that hold only accumulated energy (the oldest style of this extension) can get the delta energy columns with the SQLite script `util/brultech/calc_deltas` in this repository. The header of the script has the details.
 
-Follow the instructions in the [setup.py install guide](http://www.weewx.com/docs/setup.htm) and
-install WeeWX. When asked, specify that the `Simulator` driver be used. When you're done, WeeWX
-will be installed in `/home/weewx`. 
+## Configuration
 
-### Deactivate weather skins
-By default, when WeeWX is installed, it installs the _Seasons_ skin and activates it. You will
-need to deactivate it. In the WeeWX configuration file `weewx.conf`, generally located in
-`/home/weewx/weewx.conf`, set option `enable` to `false` for the _Seasons_ report. When you're
-done, it will look like this:
+The installer writes these settings. This is the smallest working set:
 
 ```ini
-    ...
-    [[SeasonsReport]]
-        # The SeasonsReport uses the 'Seasons' skin, which contains the
-        # images, templates and plots for the report.
-        skin = Seasons
-        enable = false
-        lang = en
-        unit_system = us
+[Station]
+    station_type = Brultech
+
+[Brultech]
+    driver = user.brultech
+    [[socket]]
+        host = 192.168.1.104
+        port = 8000
+
+[DataBindings]
+    [[bt_binding]]
+        database = bt_sqlite
+        table_name = archive
+        manager = weewx.manager.DaySummaryManager
+        schema = user.gem_schema.schema
+
+[Databases]
+    [[bt_sqlite]]
+        database_name = weepwr.sdb
+        database_type = SQLite
+
+[StdArchive]
+    data_binding = bt_binding
+
+[Engine]
+    [[Services]]
+        data_services = user.brultech.BrultechService
+
+[StdReport]
+    [[SeasonsPowerReport]]
+        skin = SeasonsPower
+        enable = True
+        data_binding = bt_binding
+        [[[Units]]]
+            [[[[Groups]]]]
+                group_energy2 = kilowatt_hour
 ```
 
-Next step is to install the weewx-brultech extension itself, either by using the WeeWX installer,
-or manually.
+### Options in `[Brultech]`
 
-## Install the extension by using the WeeWX installer
+| Option          | Default            | Meaning                                                                                                                                |
+|-----------------|--------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `driver`        | `user.brultech`    | The driver module.                                                                                                                     |
+| `connection`    | `socket`           | How to reach the monitor. Only `socket` exists.                                                                                        |
+| `poll_interval` | `10`               | Seconds between polls of the monitor.                                                                                                  |
+| `max_channels`  | `32`               | How many current channels to read. The hardware has up to 48, the schema 32.                                                           |
+| `packet_type`   | `GEMBin48NetTime`  | `GEMBin48NetTime` (with the clock of the monitor, used for time synchronization) or `GEMBin48Net`. See the limitations for `GEMAscii`. |
+| `stale`         | `1800`             | Seconds. A previous record older than this is not used to calculate power and delta energy. Keep it above the archive interval.       |
+| `max_tries`     | `3`                | Read by the driver but not used. Retries are fixed at three.                                                                           |
 
-This section describes how to install `weewx-brultech` using the WeeWX installer.
+In `[[socket]]`:
 
-### Download and install
-Download the `weewx-brultech` package and install it using the WeeWX installer:
+| Option       | Default           | Meaning                                                             |
+|--------------|-------------------|---------------------------------------------------------------------|
+| `host`       | `192.168.1.104`   | Host name or IP address of the monitor.                             |
+| `port`       | `8000`            | Port of the monitor.                                                |
+| `timeout`    | `20`              | Seconds to wait on the connection.                                  |
+| `send_delay` | `0.2`             | Seconds to wait after a command before looking for the response.    |
 
-```shell
-cd /home/weewx
-wget https://github.com/tkeffer/weewx-brultech/archive/master.zip
-./bin/wee_extension --install=master.zip
-```
+The empty section `[[sensor_map]]` is not used.
 
-### Configure
-When you're done with the installation, your WeeWX configuration will be set up to use the Brultech
-driver. However, you still have to configure the driver. Do this by using the `wee_config`
-utility with the `--reconfigure` option:
-```shell
-./bin/wee_config --reconfigure
-```
+### Database schema
 
-It will give you the opportunity to change various settings. Eventually, it will ask about options
-for the Brultech driver:
-
-```
-Specify the IP address (e.g., 192.168.0.10) or hostname of the Brultech monitor.
-host [192.168.1.104]: 192.168.0.7
-Specify the port
-port [8000]: 
-Saved backup to /home/weewx/weewx.conf.20211025164234
-```
-
-In this example, we have changed the host from `192.168.1.104` to `192.168.0.7`, but accepted
-the default port (`8000`).
-
-## Installing the extension manually
-
-This section describes how to manually configure WeeWX to use this extension.
-
-### Download and unpack
-
-Download the `weewx-brultech` package and unpack it
-
-```shell
-cd /home/weewx
-wget https://github.com/tkeffer/weewx-brultech/archive/master.zip
-tar xvf master.zip
-```
-
-### Copy files
-Put the files `brultech.py` and `gem_schema.py` in the `user` subdirectory. Typically,
-
-```shell
-cd /home/weewx/weewx-brultech-master
-cp bin/user/brultech.py /home/weewx/bin/user
-cp bin/user/gem_schema.py /home/weewx/bin/user
-```
-
-Copy the `StandardPower` skin over:
-```shell script
-cp -r skins/StandardPower /home/weewx/skins
-```
-
-### Configure `weewx.conf`
-
-This section is about manually configuring the configuration file, `weewx.conf`, usually found
-in `/home/weewx/weewx.conf`.
-
-1. __Add section `[Brultech]`__
-
-    Insert a new stanza `[Brultech]` into your `weewx.conf` file that looks like this:
-
-    ```ini
-    [Brultech]
-
-        # See README.md for instructions on how to configure the Brultech devices!!
-    
-        # Power is computed as the difference between energy records. How old a 
-        # record can be and still be used for this calculation:
-        stale = 1800
-    
-        # How often to poll the device for data
-        poll_interval = 5
-
-        # Max number of channels to emit. Limit is set by hardware (48 for GEM).
-        max_channels = 32
-    
-        # The type of packet to use. Possible choices are GEMBin48NetTime, GEMBin48Net,
-        # or GEMAscii:
-        packet_type = GEMBin48NetTime
-    
-        # Max number of times to try an I/O operation before declaring an error
-        max_tries = 3
-    
-        driver = user.brultech
-
-        # The type of connection to use. It should match a section below. 
-        # Right now, only 'socket' is supported.
-        connection = socket
-    
-        # The following is for socket connections: 
-        [[socket]]
-            host = 192.168.1.104
-            port = 8000
-            timeout = 20
-            # After sending a command, how long to wait before looking for a response    
-            send_delay = 0.2
-
-        [[sensor_map]]
-    ```
-
-    Be sure to set options `host` and `port` to their proper values for your network configuration.
-
-2. __Set station type__
-
-    Tell WeeWX to use the Brultech device driver by setting `station_type`, 
-under section `[Station]`, to `Brultech`:
- 
-     ```ini
-    [Station]
-
-        ...
-
-        # Set to type of station hardware. There must be a corresponding stanza
-        # in this file with a 'driver' parameter indicating the driver to be used.
-        station_type = Brultech
-    ```
-
-3. __Configure new binding__
-
-    Under stanza `[DataBindings]`, add a new database binding `bt_binding` for the Brultech device.
-    It should look like this: 
-
-    ```ini
-   [DataBindings]
-
-     ...
-
-        [[bt_binding]]
-            # The database must match one of the sections in [Databases].
-            database = bt_sqlite
-            # The name of the table within the database
-            table_name = archive
-            # The manager handles aggregation of data for historical summaries
-            manager = weewx.manager.DaySummaryManager
-            # The schema defines the structure of the database.
-            # It is *only* used when the database is created.
-            schema = user.gem_schema.schema
-    ```
-
-4. __Configure new database__
-
-    Under stanza `[Databases]`, add a new database `bt_sqlite`:
-    ```ini
-    [Databases]
-   
-    ...
-   
-        [[bt_sqlite]]
-            database_name = weepwr.sdb
-            database_type = SQLite  
-    ```
-   
-5. __Use the new binding__ 
-
-    Under stanza `[StdArchive]`, set the option `data_binding` to `bt_binding`. This will cause
-    new data to be archived in the database dedicated to Brultech data.
-    
-    ```ini
-    [StdArchive]
-
-        ...
-   
-        data_binding = bt_binding         
-   ```
-   
-6. __Configure and activate the _SeasonsPower_ skin__
- 
-   Add a subsection to `[StdReport]` for the _SeasonsPower_ skin, and activate it by
-   setting `enable` to `True`:
-    
-   ```ini
-   [StdReport]
-    
-       ...
-    
-       [[PowerReport]]
-           skin = SeasonsPower
-           enable = True
-           data_binding = bt_binding
-           [[[Units]]]
-               [[[[Groups]]]]
-                   group_energy2 = kilowatt_hour
-   ```
-   Incidentally, while you're in there, make sure that any "weather" skins have been deactivated 
-   --- they won't work with the data from the energy monitor!
-    
-8. __Make sure the configuration service runs__
- 
-    Because of its many specialized types, the Brultech driver requires setting up some custom
- configurations. This is done by the service `brultech.BrultechService`. You must
- add it to the list of services to run by adding it to `data_services`. So, now
- your `[Engine]` section looks something like this: 
- 
-    ```ini
-    [Engine]
-    
-       [[Services]]
-           # This section specifies the services that should be run. They are
-           # grouped by type, and the order of services within each group
-           # determines the order in which the services will be run.
-           prep_services = weewx.engine.StdTimeSynch,
-           data_services = user.brultech.BrultechService
-           process_services = weewx.engine.StdConvert, weewx.engine.StdCalibrate, weewx.engine.StdQC, weewx.wxservices.StdWXCalculate
-           ...
-    ```
-
-## Select database options
-The default schema works well for most applications. However, you may want to tune it for special
-cases. Take a look in the schema's file, usually located in `/home/weewx/bin/user/gem_schema.py`, and you will see
-a number of options. Here are their meanings
-
+The schema is read when the database is created. To change it, edit `bin/user/gem_schema.py` of your station before the first start, or delete `weepwr.sdb` afterwards to start over. Reducing the channel counts saves space.
 
 | Option                          | Default | Meaning                                                                   |
 |---------------------------------|---------|---------------------------------------------------------------------------|
@@ -325,89 +124,70 @@ a number of options. Here are their meanings
 | `INCLUDE_POWER_ABSOLUTE`        | `False` | Store the average absolute power consumed during archive period.          |
 | `INCLUDE_POWER_POLARIZED`       | `False` | Store the average polarized power consumed during archive period.         |
 
+Power is calculated from the matching delta energy when a report asks for it, so the power columns are not needed for the skins.
 
-## Starting WeeWX
-You're done installing and configuring the extension. You can start WeeWX either directly from the
-command line, or start it as a daemon. Instructions are in the WeeWX User's Guide, in the section
-[_Running WeeWX_](http://www.weewx.com/docs/usersguide.htm#running).
+### Choosing what the skin shows
 
-## Observation types
+The monitor reports every channel, whether or not anything is connected, so unused channels appear in the database as zeros. Limit them with `max_channels`, and in the `[DisplayOptions]` section of the skin (`observations_current`, `observations_stats`, `plot_groups`), which can be overridden in `weewx.conf`.
 
-The driver can emit the following types:
+### Observation types
 
-| Type               | Python type | Meaning                                                    |
-|--------------------|-------------|------------------------------------------------------------|
-| `dateTime`         | `int`       | Timestamp in unix epoch time                               |
-| `serial`           | `str`       | The unit serial number                                     |
-| `unit_id`          | `int`       | Unit identification number                                 |
-| `secs`             | `int`       | Continuous device uptime                                   |
-| `chNN_count`       | `int`       | Pulse count in channel `NN`                                |
-| `chNN_volt`        | `float`     | Voltage in channel `NN`                                    |
-| `chNN_temperature` | `float`     | Temperature in channel `NN`                                |
-| `chNN_amp`         | `float`     | Current (amperage) in channel `NN`                         |
-| `chNN_a_power`     | `float`     | Average absolute power over an archive period (see below)  |
-| `chNN_p_power`     | `float`     | Average polarized power over an archive period (see below) |
-| `chNN_a_energy2`   | `float`     | Total accumulated absolute energy (see below)              |
-| `chNN_p_energy2`   | `float`     | Total accumulated polarized energy (see below)             |
-| `chNN_ad_energy2`  | `float`     | Absolute energy over an archive period (see below)         |
-| `chNN_pd_energy2`  | `float`     | Polarized energy over an archive period (see below)        |
+`N` is the channel number, without a leading zero (`ch2_amp`, not `ch02_amp`).
 
-where `NN` is the channel number. NB: the channel number uses no leading zero. For example, it is `ch2_volt`, 
-NOT `ch02_volt`.
+| Type                  | Meaning                                                                                  |
+|-----------------------|------------------------------------------------------------------------------------------|
+| `dateTime`            | Time stamp, unix epoch time                                                              |
+| `serial`, `ser_no`    | Serial number of the unit, formatted and as a number                                     |
+| `unit_id`             | Unit identification number                                                               |
+| `secs`                | Continuous device uptime                                                                 |
+| `time_created`        | The clock of the monitor. Only with packet type `GEMBin48NetTime`                        |
+| `ch1_volt`            | Line voltage. The monitor reports one                                                    |
+| `chN_amp`             | Current in channel `N`                                                                   |
+| `chN_count`           | Pulse count, channels 1 to 4                                                             |
+| `chN_temperature`     | Temperature, channels 1 to 8. A reading outside +/-255 is dropped                        |
+| `chN_a_energy2`       | Accumulated absolute energy, in watt-seconds                                             |
+| `chN_p_energy2`       | Accumulated polarized energy                                                             |
+| `chN_ad_energy2`      | Absolute energy over an archive period (delta energy)                                    |
+| `chN_pd_energy2`      | Polarized energy over an archive period                                                  |
+| `chN_a_power`         | Average absolute power over an archive period, calculated from delta energy              |
+| `chN_p_power`         | Average polarized power over an archive period                                           |
 
-So, for example:
-- `ch14_p_energy2` would be the accumulated polarized energy in channel 14.
-- `ch2_a_energy2` would be the accumulated absolute energy in channel 2.
-- `ch2_ad_energy2` would be the absolute energy used during the archive interval in channel 2.
+For example, `ch14_p_energy2` is the accumulated polarized energy in channel 14, and `ch2_ad_energy2` the absolute energy used in channel 2 during the archive interval.
 
-## Accumulated vs delta energy.
+### Accumulated and delta energy
 
-### Accumulated
+The monitor reports accumulated energy, the energy that has flowed through the channel since the monitor was reset. The driver turns two consecutive values into delta energy, the energy used in one archive interval.
 
-The Brultech energy monitors emit *accumulated* energy in units of watt-seconds. Accumulated energy is the amount of
-energy that has flowed through the channel since the monitor was reset. Because a watt-second is a small amount of
-energy, and it may be years since your monitor was reset, this can often be a very large number. Fortunately, the
-Brultech monitors reserve five bytes for this value, so it can count up to over 300,000 kWh. A typical home might use
-10,000 kWh per year, so the value is unlikely to rollover for years.
+To get the energy used over a period, either subtract the accumulated values at its ends, or sum the delta energies. For channel 8 and a month:
 
-### Delta
+| Strategy                           | Tag                         |
+|------------------------------------|-----------------------------|
+| Calculate using accumulated energy | `$month.ch8_a_energy2.diff` |
+| Calculate using delta energy       | `$month.ch8_ad_energy2.sum` |
 
-WeeWX uses accumulated energy to calculate *delta* energy, which is the amount of energy that flowed through the channel
-in an archive interval (typically 5 minutes). It is the *difference* in accumulated energy between the beginning and the
-end of the interval.
+The skins use accumulated energy for the totals and delta energy for the bar plots.
 
-### Calculations
-To calculate the amount of power used over, say, a month, you can either take the difference in accumulated
-energy, or you can sum the smaller delta energies for the month. Here's an example using channel 8:
+Accumulated energy needs two values from the database, where delta energy needs all records of the period. It is also unaffected if WeeWX is down while the monitor keeps counting. Delta energy is the better choice if the monitor was reset or its battery failed, because the counters then start at zero and the difference across the reset is negative.
 
-| Strategy                           | Tag                          |
-|------------------------------------|------------------------------|
-| Calculate using accumulated energy | `$month.ch8_a_energy2.diff`  |
-| Calculate using delta energy       | `$month.ch8_ad_energy2.sum`  |
+`.diff` of accumulated energy is empty (N/A) for a period with fewer than two records.
 
+## Limitations
 
-### Which to use?
-By default, both values are stored in the database. The skins that come with `weewx-brultech` use accumulated energy.
+- Not tested on a real monitor. The tests use a fake monitor that serves packets built from the packet layout in the driver. Passing tests do not show that the layout matches your device.
+- Only the binary packet types are expected to work. `GEMAscii` is untested. It returns `chN_energy2` and `chN_power` without the `_a_`, and without `dateTime` and `usUnits`, which the schema and the skins do not use.
+- Only the monitor in server mode is supported, and the driver always polls it.
+- Reports have shown unconnected temperature inputs as 32 &deg;F. The driver stores what the monitor reports.
+- The skin _SeasonsPower_ bundles the fonts Open Sans and Kanit in `skins/SeasonsPower/font`. `OFL.txt` matches the notice inside the Kanit files (SIL Open Font License 1.1). The Open Sans TTF files (version 1.10) carry the notice "Licensed under the Apache License, Version 2.0", but the shipped `license.txt` is the SIL Open Font License, and no Apache license text is included. This is unresolved. The skin does not use Kanit.
+- Aggregated power plots, such as the week, month and year plots of the skin, query the database once per point and per channel. Generating all plots of 32 channels takes a while on a small computer.
 
-They each have their advantages.
+## Development
 
-#### Advantage accumulated energy
+With WeeWX and pytest in the Python environment:
 
-The calculation is very efficient: only two numbers need be looked up in the database. By contrast, using delta energies
-requires summing all the records.
+```shell
+python -m pytest -q tests
+```
 
-If the computer running WeeWX goes down during the time period, but the energy monitor stays up, it won't affect the
-final result. This is because you only need the first and last value for the time period to calculate the total energy
-used.
+## License
 
-Of course, if the monitor goes down, you will miss energy used during that time period no matter which method you use.
-
-#### Advantage delta energy
-
-If you have technical problems with your monitor and must do a system reset, the counters will go to zero. This means
-that if you try to calculate total energy used over a period that includes the reset, and you do the calculation by
-calculating differences in accumulated energy, you will get a large negative number. By contrast, if you sum the
-delta energies, you will get the correct answer.
-
-The same thing can happen if the battery in your GEM fails. It is responsible for maintaining the count should the power
-fail.
+Copyright (c) 2013-2022 Tom Keffer. The skin _SeasonsPower_ is Copyright (c) 2018-2022 Tom Keffer and Matthew Wall. Licensed under the GNU General Public License, version 3. See `LICENSE.txt`. Changes since 2026-10-23 are listed in `changelog`.
