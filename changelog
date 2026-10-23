@@ -1,3 +1,24 @@
+2.3.0 23-Oct-2026
+* Continued by the weewx-packages organization (https://github.com/weewx-packages/weewx-brultech).
+* Python 2 support removed. The installer no longer imports `distutils`, so it works with Python 3.12 and later.
+  The driver no longer uses the Python 2 modules `StringIO` and `urlparse`.
+* Requires WeeWX 5.0 or later. Tested with WeeWX 5.5.2 on Python 3.10 and 3.14.
+* Fixed `driver = user.brultech.Brultech` in the default `[Brultech]` stanza that `weectl station` uses. WeeWX
+  imports the value as a module, so it must be `user.brultech`.
+* Fixed reading a packet that arrives in three or more pieces. The driver asked for too few bytes on the second read
+  and failed with "Bad header or footer".
+* Fixed `$period.chN_a_energy2.diff` (issue #3 of the original repository). If no record fell in the period,
+  say after the system was down for a day, the result was negative. It is now empty (None).
+* Fixed a `KeyError` in `BTExtends.get_series()`.
+* Fixed the log call for unknown ASCII packet fields.
+* Option `stale` works again (issue #3 of the original repository). A previous record older than `stale` seconds
+  (default 1800) is no longer used to calculate power and delta energy. Before, the energy of a long gap, such as
+  the device being unreachable for a day, was booked to one record as a spike.
+* Fixed the statistics and monthly/yearly summaries of the SeasonsPower skin. They took `.diff` of the delta energies
+  (`chN_ad_energy2`), which is meaningless. `observations_stats` now lists the accumulated energies (`chN_a_energy2`).
+* Added tests in `tests/`. They use a fake monitor on a local socket.
+* Rewrote the README. Removed the install paths for `wee_extension` and `setup.py`.
+
 2.2.0 07-Sep-2022
 * Switched energy summaries back to using differences of accumulated energy.
   This is more robust to power failure, although less robust to system reset. See the README.

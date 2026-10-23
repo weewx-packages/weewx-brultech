@@ -1,6 +1,6 @@
 import unittest
 
-from brultech import energy2_re, denergy2_re, power_re
+from user.brultech import energy2_re, denergy2_re, power_re
 
 
 class RETest(unittest.TestCase):
